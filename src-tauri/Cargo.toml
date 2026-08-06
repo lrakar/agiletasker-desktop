@@ -1,6 +1,6 @@
 [package]
 name = "agiletasker-desktop"
-version = "0.1.0"
+version = "0.1.1"
 description = "AgileTasker desktop shell — tray-resident webview + daemon supervisor"
 edition = "2021"
 rust-version = "1.77"

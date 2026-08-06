@@ -10,6 +10,7 @@
     "build": "tauri build"
   },
   "devDependencies": {
+    "@napi-rs/canvas": "^1.0.3",
     "@tauri-apps/cli": "^2.11.4"
   }
 }

@@ -137,12 +137,21 @@ async fn check_for_updates_interactive(app: &AppHandle) {
 }
 
 /// Startup (10s after launch) and every-6h background update check (wired
-/// in `lib.rs`'s `setup()`): silent unless an update actually exists — a
-/// background timer nagging the user with "you're up to date" every 6h, or
-/// surfacing a network hiccup as an error dialog, would just train them to
-/// dismiss it without reading. Only the tray's explicit "Check for
-/// updates…" (`check_for_updates_interactive` above) talks back on every
-/// outcome.
+/// in `lib.rs`'s `setup()`).
+///
+/// Fully silent by design — no dialogs on any outcome. The app's UI lives on
+/// agiletasker.com, so a web deploy already reaches users without any of
+/// this; shell updates are infrequent, small, and of no interest to the
+/// person using the app. Asking permission to install one is pure
+/// interruption.
+///
+/// The one thing that genuinely must not be interrupted is a running agent:
+/// installing replaces the binary and restarts the process, which would kill
+/// every supervised daemon mid-work. So the install is gated on the app
+/// being IDLE (no daemons running). While agents are working the update is
+/// simply left on the server and re-checked on the next 6h tick — it lands
+/// the first time the machine is quiet, or on the next launch. Deferring an
+/// update costs nothing; killing someone's agent run costs them real work.
 pub async fn check_for_updates_background(app: &AppHandle) {
     let updater = match app.updater() {
         Ok(u) => u,
@@ -154,15 +163,18 @@ pub async fn check_for_updates_background(app: &AppHandle) {
     match updater.check().await {
         Ok(Some(update)) => {
             let version = update.version.clone();
-            let confirmed =
-                ask(app, "Update AgileTasker shell", &format!("A new version of the AgileTasker shell ({version}) is available. Update now?")).await;
-            if confirmed {
-                if let Err(e) = update.download_and_install(|_chunk, _total| {}, || {}).await {
-                    log::error!("background update download/install failed: {e}");
-                    show_message(app, "Update failed", &format!("Could not install the update: {e}"), MessageDialogKind::Error);
-                } else {
-                    app.restart();
-                }
+            let busy = app
+                .try_state::<Arc<DaemonManager>>()
+                .map(|m| m.running_count() > 0)
+                .unwrap_or(false);
+            if busy {
+                log::info!("shell update {version} available; deferring — agents are running");
+                return;
+            }
+            log::info!("shell update {version} available; installing silently (app idle)");
+            match update.download_and_install(|_chunk, _total| {}, || {}).await {
+                Ok(()) => app.restart(),
+                Err(e) => log::error!("silent update install failed (will retry next check): {e}"),
             }
         }
         Ok(None) => {}
