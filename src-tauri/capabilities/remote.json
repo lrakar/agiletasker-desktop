@@ -1,0 +1,24 @@
+{
+  "$schema": "../gen/schemas/remote-schema.json",
+  "identifier": "remote-agiletasker",
+  "description": "Grants the main window IPC access while it is displaying the remote https://agiletasker.com origin: the narrow core:event listen/unlisten set (so the web app can subscribe to the daemon-status event this app emits) plus exactly the app-defined commands the web UI drives daemon pairing/supervision through. Deliberately excludes any plugin permission (dialog, shell, updater, ...) beyond what these custom commands wrap internally in Rust — the remote page never gets direct plugin access, only the specific command surface below.",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["https://agiletasker.com"]
+  },
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "allow-desktop-info",
+    "allow-set-autostart",
+    "allow-pair-daemon",
+    "allow-unpair-daemon",
+    "allow-list-daemons",
+    "allow-restart-daemon",
+    "allow-stop-daemon",
+    "allow-start-daemon",
+    "allow-daemon-log-tail",
+    "allow-pick-directory",
+    "allow-check-for-shell-update"
+  ]
+}

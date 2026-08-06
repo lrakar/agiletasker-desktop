@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-unpair-daemon"
+description = "Enables the unpair_daemon command without any pre-configured scope."
+commands.allow = ["unpair_daemon"]
+
+[[permission]]
+identifier = "deny-unpair-daemon"
+description = "Denies the unpair_daemon command without any pre-configured scope."
+commands.deny = ["unpair_daemon"]

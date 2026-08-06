@@ -1,0 +1,15 @@
+{
+  "name": "agiletasker-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Tauri 2 desktop shell for AgileTasker — background tray app that keeps the user's workspace-host and agent-bridge daemons alive and installs the latest agiletasker.com web build in a webview.",
+  "type": "module",
+  "scripts": {
+    "prepare": "node scripts/prepare-deps.mjs",
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4"
+  }
+}

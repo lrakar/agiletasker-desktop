@@ -1,0 +1,105 @@
+# AgileTasker Desktop release pipeline.
+#
+# Lives in the main (private) repo at desktop/ci/release.yml; the sync script
+# (scripts/sync-desktop-repo.mjs) installs it as .github/workflows/release.yml
+# in the PUBLIC lrakar/agiletasker-desktop repo, whose releases are the public
+# download + auto-update channel (private-repo assets can't be public links).
+#
+# Legs run serially (max-parallel: 1): tauri-action merges platform entries
+# into the release's latest.json by download-and-update — parallel legs race
+# that read-modify-write and can drop a platform from the updater manifest.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - platform: windows-latest
+            args: ''
+            triple: x86_64-pc-windows-msvc
+            node_arch: x64
+            bundle_glob: 'src-tauri/target/release/bundle/nsis/*.exe'
+            stable_asset: AgileTasker-Setup.exe
+          - platform: macos-latest
+            args: '--target aarch64-apple-darwin'
+            triple: aarch64-apple-darwin
+            node_arch: arm64
+            bundle_glob: 'src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg'
+            stable_asset: AgileTasker-AppleSilicon.dmg
+          - platform: macos-latest
+            args: '--target x86_64-apple-darwin'
+            triple: x86_64-apple-darwin
+            node_arch: x64
+            bundle_glob: 'src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg'
+            stable_asset: AgileTasker-Intel.dmg
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ contains(matrix.platform, 'macos') && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: install dependencies
+        run: npm install
+
+      # Places the Node sidecar binary (triple-suffixed) and the daemon native
+      # deps (node-pty/werift) that get bundled as resources. The x86_64 mac
+      # leg runs on an arm64 runner, so the target arch is passed explicitly.
+      - name: prepare sidecar + daemon deps
+        run: node scripts/prepare-deps.mjs
+        env:
+          PREP_TARGET_TRIPLE: ${{ matrix.triple }}
+          PREP_NODE_ARCH: ${{ matrix.node_arch }}
+
+      - name: build + publish release
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          # The key was generated with an EMPTY password (still encrypted with
+          # the empty passphrase) — the var must exist and be empty, not absent.
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+        with:
+          tagName: v__VERSION__
+          releaseName: 'AgileTasker Desktop v__VERSION__'
+          releaseBody: 'Windows and macOS installers. What changed: https://agiletasker.com/updates'
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
+
+      # The landing page links immutable stable names via /releases/latest/download/,
+      # so every release must also carry the platform artifact under that name.
+      - name: upload stable-name asset
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          tag="v${version}"
+          src="$(ls ${{ matrix.bundle_glob }} | head -n 1)"
+          cp "$src" "${{ matrix.stable_asset }}"
+          gh release upload "$tag" "${{ matrix.stable_asset }}" --clobber

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-daemon-log-tail"
+description = "Enables the daemon_log_tail command without any pre-configured scope."
+commands.allow = ["daemon_log_tail"]
+
+[[permission]]
+identifier = "deny-daemon-log-tail"
+description = "Denies the daemon_log_tail command without any pre-configured scope."
+commands.deny = ["daemon_log_tail"]

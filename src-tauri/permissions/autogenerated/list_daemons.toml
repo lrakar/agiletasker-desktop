@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-list-daemons"
+description = "Enables the list_daemons command without any pre-configured scope."
+commands.allow = ["list_daemons"]
+
+[[permission]]
+identifier = "deny-list-daemons"
+description = "Denies the list_daemons command without any pre-configured scope."
+commands.deny = ["list_daemons"]

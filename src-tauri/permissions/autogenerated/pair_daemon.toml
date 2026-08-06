@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-pair-daemon"
+description = "Enables the pair_daemon command without any pre-configured scope."
+commands.allow = ["pair_daemon"]
+
+[[permission]]
+identifier = "deny-pair-daemon"
+description = "Denies the pair_daemon command without any pre-configured scope."
+commands.deny = ["pair_daemon"]

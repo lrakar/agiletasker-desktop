@@ -1,0 +1,59 @@
+[package]
+name = "agiletasker-desktop"
+version = "0.1.0"
+description = "AgileTasker desktop shell — tray-resident webview + daemon supervisor"
+edition = "2021"
+rust-version = "1.77"
+build = "build.rs"
+
+# `lib` + thin `main.rs` is the standard Tauri 2 split: the mobile entry point
+# (not used today, but keeps the door open) needs a library target, and it
+# lets `cargo test` exercise the daemon/classify/paths logic without linking
+# a full application binary.
+[lib]
+name = "agiletasker_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-shell = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-log = "2"
+tauri-plugin-window-state = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-process = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+# Real feature names per `cargo check`'s own error listing (the crate's docs
+# text disagreed with them at the time this was written — trust the compiler):
+# apple-native, windows-native, linux-native, sync-secret-service,
+# async-secret-service, crypto-openssl, crypto-rust, openssl, tokio, async-io,
+# vendored. All three platform backends are named explicitly rather than
+# relied on as defaults, so this Cargo.toml is correct on every target the CI
+# agent builds (Windows here; macOS/Linux legs in CI) without depending on
+# which of them the crate currently defaults on.
+keyring = { version = "3", features = ["windows-native", "apple-native", "linux-native"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "fs", "process"] }
+log = "0.4"
+
+# No windows-sys/libc dependency for process termination: the escalation step
+# of the stop sequence (daemon/manager.rs::hard_kill) shells out to the
+# platform's own `taskkill`/`kill` utility instead — see the comment there
+# for why (tauri-plugin-shell's CommandChild must be dropped, consuming it,
+# to close stdin, which forfeits its own in-process kill() handle).
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
+
+# NSIS-only per the brief: bundle.targets in tauri.conf.json is explicitly
+# ["nsis", "dmg"] (no "msi") so the WiX/MSI target is never attempted.

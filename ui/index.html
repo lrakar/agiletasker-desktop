@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AgileTasker</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: #0b0d12;
+    color: #e6e8ec;
+    font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+  }
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 24px;
+  }
+  .card { max-width: 360px; }
+  h1 { font-size: 18px; font-weight: 600; margin: 0 0 8px; }
+  p { font-size: 14px; line-height: 1.5; color: #9aa1ad; margin: 0 0 20px; }
+  button {
+    appearance: none;
+    border: 1px solid #2a2f3a;
+    background: #171a21;
+    color: #e6e8ec;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button:hover { background: #1f232c; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>AgileTasker needs an internet connection on first launch</h1>
+    <p>This window only appears if the app couldn't load agiletasker.com. Check your connection, then try again.</p>
+    <button id="retry">Retry</button>
+  </div>
+  <script>
+    // Static fallback only — see DESIGN.md "Wave 2" for automatic
+    // offline-detection wiring (this page exists purely so the build's
+    // frontendDist points at something valid; the shell's real window
+    // navigates straight to https://agiletasker.com and does not load
+    // this page automatically today).
+    document.getElementById('retry').addEventListener('click', () => {
+      window.location.href = 'https://agiletasker.com';
+    });
+  </script>
+</body>
+</html>

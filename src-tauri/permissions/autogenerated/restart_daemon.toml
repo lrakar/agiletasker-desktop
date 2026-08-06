@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-restart-daemon"
+description = "Enables the restart_daemon command without any pre-configured scope."
+commands.allow = ["restart_daemon"]
+
+[[permission]]
+identifier = "deny-restart-daemon"
+description = "Denies the restart_daemon command without any pre-configured scope."
+commands.deny = ["restart_daemon"]
