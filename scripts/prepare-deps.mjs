@@ -236,6 +236,14 @@ function prepareDaemonDeps() {
       shell: process.platform === 'win32',
     })
 
+    // npm's CLI shims in node_modules/.bin are SYMLINKS on macOS/Linux, and
+    // Tauri's resource bundler resolves every path it globs — a symlink whose
+    // relative target doesn't survive the copy makes `tauri_build::try_build`
+    // hard-fail ("resource path ... doesn't exist") and kills the whole build.
+    // Nothing here is ever executed as a CLI (node-pty/werift are libraries
+    // the daemon imports), so the shims are pure dead weight — drop them.
+    rmSync(path.join(scratch, 'node_modules', '.bin'), { recursive: true, force: true })
+
     const destParent = path.dirname(destNodeModules)
     rmSync(destNodeModules, { recursive: true, force: true })
     mkdirSync(destParent, { recursive: true })
