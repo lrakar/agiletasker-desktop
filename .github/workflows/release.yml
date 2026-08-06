@@ -82,6 +82,12 @@ jobs:
           # The key was generated with an EMPTY password (still encrypted with
           # the empty passphrase) — the var must exist and be empty, not absent.
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+          # Read by build.rs (desktop Google sign-in, src-tauri/src/oauth.rs)
+          # via option_env! at compile time — see build.rs's load_oauth_env
+          # doc comment. No desktop/.env.oauth exists in this checkout (it's
+          # gitignored), so these are the only source rustc sees them from.
+          GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
         with:
           tagName: v__VERSION__
           releaseName: 'AgileTasker Desktop v__VERSION__'

@@ -1,6 +1,6 @@
 [package]
 name = "agiletasker-desktop"
-version = "0.1.1"
+version = "0.1.2"
 description = "AgileTasker desktop shell — tray-resident webview + daemon supervisor"
 edition = "2021"
 rust-version = "1.77"
@@ -43,8 +43,27 @@ thiserror = "2"
 # which of them the crate currently defaults on.
 keyring = { version = "3", features = ["windows-native", "apple-native", "linux-native"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "fs", "process"] }
+# "net" (TcpListener) + "io-util" (BufReader/AsyncBufReadExt/AsyncWriteExt)
+# added for the Google sign-in OAuth loopback listener (src/oauth.rs) — every
+# other feature here predates that and is unrelated to it.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "fs", "process", "net", "io-util"] }
 log = "0.4"
+# The oauth.rs quartet below is PKCE (RFC 7636) support for the desktop
+# Google sign-in loopback flow: code_verifier/state randomness (rand),
+# S256 challenge hashing (sha2), base64url encoding of both (base64), and
+# percent-encoding the auth URL's query string / decoding the callback's
+# (percent-encoding). All four were already present transitively (see
+# Cargo.lock) via tauri/reqwest/url's own dependency graphs, so making them
+# direct dependencies adds no new crates to the build.
+base64 = "0.22"
+sha2 = "0.10"
+rand = "0.9"
+percent-encoding = "2"
+# Machine hostname for `desktop_info` (Workspaces v2, C1/C3) — the web app's
+# device list uses it to label "this computer". Cross-platform (Windows
+# GetComputerNameExW / macOS+Linux libc gethostname), zero other deps pulled
+# in.
+gethostname = "0.5"
 
 # No windows-sys/libc dependency for process termination: the escalation step
 # of the stop sequence (daemon/manager.rs::hard_kill) shells out to the

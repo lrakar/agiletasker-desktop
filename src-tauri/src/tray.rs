@@ -87,10 +87,11 @@ pub fn refresh_status_label(app: &AppHandle, manager: &DaemonManager) {
 /// Tray "Quit AgileTasker (stops agents)": gracefully stop every daemon
 /// (closing their stdin so patched daemons self-exit cleanly, escalating to
 /// a hard kill after 5s per daemon otherwise — see `daemon::manager`), THEN
-/// actually exit the process. This is the ONLY path that exits the app —
-/// closing the window only hides it (see `lib.rs`'s `CloseRequested`
-/// handler).
-async fn quit_gracefully(app: &AppHandle) {
+/// actually exit the process. `pub` (Workspaces v2, C3) so `lib.rs`'s
+/// `CloseRequested` handler can take this exact same path when the user's
+/// persisted close-behavior setting is 'quit' — hide-to-tray remains the
+/// default and only OTHER exit path (see that handler + `settings` module).
+pub async fn quit_gracefully(app: &AppHandle) {
     if let Some(manager) = app.try_state::<Arc<DaemonManager>>() {
         manager.shutdown_all().await;
     }

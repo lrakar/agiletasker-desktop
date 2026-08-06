@@ -11,6 +11,8 @@
 //! only need `Result<T, String>` because that's what crosses IPC.
 
 use crate::daemon::{DaemonManager, DaemonStatus, PairDaemonInput};
+use crate::oauth::{self, GoogleSignInResult};
+use crate::settings::{self, ShellSettings};
 use serde::Serialize;
 use std::sync::Arc;
 use tauri::{AppHandle, State};
@@ -25,6 +27,15 @@ pub struct DesktopInfo {
     pub platform: String,
     pub arch: String,
     pub autostart: bool,
+    /// Machine hostname (Workspaces v2, C3/C1) — surfaced so the web app can
+    /// label "this computer" in device lists (`gethostname`, lossy: any
+    /// non-UTF8 bytes in an exotic hostname become the replacement
+    /// character rather than failing the whole command).
+    pub hostname: String,
+    /// Persisted window-close behavior — 'tray' (default, hide) or 'quit'
+    /// (same graceful stop-then-exit as the tray's own Quit). See
+    /// `set_close_behavior` and the `settings` module.
+    pub close_behavior: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -41,12 +52,35 @@ pub struct ShellUpdateInfo {
 #[tauri::command]
 pub async fn desktop_info(app: AppHandle) -> Result<DesktopInfo, String> {
     let autostart = app.autolaunch().is_enabled().unwrap_or(false);
+    let app_data_dir = settings::resolve_app_data_dir(&app);
+    let close_behavior = settings::load_settings_or_default(&app_data_dir).close_behavior;
     Ok(DesktopInfo {
         app_version: app.package_info().version.to_string(),
         platform: std::env::consts::OS.to_string(),
         arch: std::env::consts::ARCH.to_string(),
         autostart,
+        hostname: gethostname::gethostname().to_string_lossy().into_owned(),
+        close_behavior,
     })
+}
+
+/// Sets the persisted window-close behavior ('tray' hides, matching today's
+/// only behavior; 'quit' makes the window's close button take the same
+/// graceful-stop-then-exit path as the tray's own "Quit" — see `lib.rs`'s
+/// `CloseRequested` handler). Validates before writing anything (an invalid
+/// value is a caller bug, not a state to silently coerce), then — per the
+/// same "re-queried after the attempt rather than echoing the request"
+/// philosophy `set_autostart` documents above — reads the value back from
+/// disk rather than just returning what was requested, so a caller can
+/// trust the response reflects what's actually persisted.
+#[tauri::command]
+pub async fn set_close_behavior(app: AppHandle, behavior: String) -> Result<String, String> {
+    if !settings::is_valid_close_behavior(&behavior) {
+        return Err(format!("invalid close behavior \"{behavior}\" (expected \"tray\" or \"quit\")"));
+    }
+    let app_data_dir = settings::resolve_app_data_dir(&app);
+    settings::save_settings(&app_data_dir, &ShellSettings { close_behavior: behavior }).map_err(|e| e.to_string())?;
+    Ok(settings::load_settings_or_default(&app_data_dir).close_behavior)
 }
 
 /// Toggles autostart and returns the actually-resulting state (re-queried
@@ -123,4 +157,14 @@ pub async fn check_for_shell_update(app: AppHandle) -> Result<ShellUpdateInfo, S
         Ok(None) => Ok(ShellUpdateInfo { available: false, version: None }),
         Err(e) => Err(e.to_string()),
     }
+}
+
+/// System-browser Google sign-in (see `oauth` module docs for the full
+/// loopback + PKCE flow this wraps). Errors surface Rust's user-facing
+/// message text as-is (`OAuthError`'s `thiserror` `Display` impls, e.g.
+/// "sign-in was cancelled") — the web side shows/logs them verbatim rather
+/// than re-deriving copy from an error code.
+#[tauri::command]
+pub async fn google_sign_in(app: AppHandle) -> Result<GoogleSignInResult, String> {
+    oauth::google_sign_in(&app).await.map_err(|e| e.to_string())
 }

@@ -7,12 +7,20 @@
 //! goal — keep the user's `workspace-host`/`agent-bridge` Node daemons
 //! (`daemon` module) alive for as long as the machine is on, supervised
 //! from a tray icon rather than a terminal window the user has to keep
-//! open. Closing the window hides to tray; only the tray's own "Quit"
-//! item — after gracefully stopping every daemon — actually exits.
+//! open. Closing the window hides to tray BY DEFAULT; only the tray's own
+//! "Quit" item — after gracefully stopping every daemon — actually exits.
+//! Workspaces v2 (C3) makes the window's own close behavior a persisted
+//! per-machine setting (`settings` module): a user who never wants a
+//! background tray presence can flip it to "quit", at which point the
+//! window's close button takes the SAME graceful-stop-then-exit path as the
+//! tray's "Quit" (see `tray::quit_gracefully`, now `pub` so this module's
+//! `CloseRequested` handler can call it too).
 
 mod commands;
 mod daemon;
 mod login_env;
+mod oauth;
+mod settings;
 mod tray;
 
 use daemon::DaemonManager;
@@ -186,17 +194,32 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Hide-to-tray is the whole point of this app (daemons must
-            // outlive the window) — closing the window NEVER exits; only
-            // the tray's "Quit" does (see tray::quit_gracefully).
+            // Hide-to-tray is the DEFAULT (daemons must outlive the window),
+            // but Workspaces v2 (C3) makes it a persisted per-machine
+            // choice: `set_close_behavior`/settings.json. `prevent_close()`
+            // always runs first — even the 'quit' path goes through
+            // `quit_gracefully`'s own `app.exit(0)` rather than letting this
+            // native close event tear the window down out from under a
+            // still-running graceful-stop sequence.
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
-                hide_main_window(window.app_handle());
+                let app = window.app_handle();
+                let app_data_dir = settings::resolve_app_data_dir(app);
+                let close_behavior = settings::load_settings_or_default(&app_data_dir).close_behavior;
+                if close_behavior == settings::CLOSE_BEHAVIOR_QUIT {
+                    let app = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        tray::quit_gracefully(&app).await;
+                    });
+                } else {
+                    hide_main_window(app);
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
             commands::desktop_info,
             commands::set_autostart,
+            commands::set_close_behavior,
             commands::pair_daemon,
             commands::unpair_daemon,
             commands::list_daemons,
@@ -206,6 +229,7 @@ pub fn run() {
             commands::daemon_log_tail,
             commands::pick_directory,
             commands::check_for_shell_update,
+            commands::google_sign_in,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the AgileTasker desktop shell");

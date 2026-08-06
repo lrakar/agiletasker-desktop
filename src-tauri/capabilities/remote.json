@@ -11,6 +11,7 @@
     "core:event:allow-unlisten",
     "allow-desktop-info",
     "allow-set-autostart",
+    "allow-set-close-behavior",
     "allow-pair-daemon",
     "allow-unpair-daemon",
     "allow-list-daemons",
@@ -19,6 +20,7 @@
     "allow-start-daemon",
     "allow-daemon-log-tail",
     "allow-pick-directory",
-    "allow-check-for-shell-update"
+    "allow-check-for-shell-update",
+    "allow-google-sign-in"
   ]
 }
