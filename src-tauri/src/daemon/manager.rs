@@ -153,8 +153,18 @@ impl DaemonManager {
         Arc::new(Self { app, app_data_dir, entries: Mutex::new(HashMap::new()) })
     }
 
+    /// The resolved app-data dir — shared with `daemon::reap`, which scans
+    /// for stray processes running bundles out of this same base path.
+    pub fn app_data_dir(&self) -> &std::path::Path {
+        &self.app_data_dir
+    }
+
     /// Loads `daemons.json` and spawns a supervisor task per persisted
-    /// entry, honoring its persisted `desired` state. Call once at startup.
+    /// entry, honoring its persisted `desired` state. Called at startup
+    /// (after `daemon::reap` clears strays), and again by the update flow
+    /// to respawn everything `shutdown_all` stopped when an update install
+    /// fails (see `tray::install_update_stopping_agents`) — safe to re-call
+    /// only because `shutdown_all` drained `entries` first.
     pub fn load_and_spawn_all(&self) {
         let file = match paths::load_daemons_file(&self.app_data_dir) {
             Ok(f) => f,
@@ -312,8 +322,13 @@ impl DaemonManager {
     }
 
     /// Gracefully stops every daemon concurrently (bounded by each task's
-    /// own grace + hard-kill escalation) — called once from the tray's
-    /// "Quit AgileTasker" handler before the process actually exits.
+    /// own grace + hard-kill escalation) — called from the tray's "Quit
+    /// AgileTasker" handler before the process exits, and from the update
+    /// flow before an install (running daemons hold the sidecar `node.exe`
+    /// open, which fails the installer AND orphans them across the
+    /// restart — see `tray::install_update_stopping_agents`). Persisted
+    /// `desired` states are deliberately untouched, so a later
+    /// `load_and_spawn_all` restores exactly what was running.
     pub async fn shutdown_all(&self) {
         let drained: Vec<Entry> = self.lock_entries().drain().map(|(_, v)| v).collect();
         let mut waiters = Vec::with_capacity(drained.len());
@@ -449,15 +464,23 @@ async fn graceful_stop(
     }
 }
 
-/// Last-resort termination by pid, used only when a child ignores stdin
-/// closing for the full grace period. Shells out to the platform's own
-/// process-kill utility rather than a native syscall crate: by this point
-/// we no longer hold a `CommandChild` (it was dropped to close stdin — see
-/// `graceful_stop`), so there is no in-process kill() handle left to call,
-/// and addressing by bare pid is exactly what these utilities are for.
-async fn hard_kill(pid: u32) {
+/// Last-resort termination by pid, used when a child ignores stdin closing
+/// for the full grace period — and by `daemon::reap` for stray daemons from
+/// a previous shell instance (where no stdin handle ever existed to close).
+/// Shells out to the platform's own process-kill utility rather than a
+/// native syscall crate: by this point we no longer hold a `CommandChild`
+/// (it was dropped to close stdin — see `graceful_stop`), so there is no
+/// in-process kill() handle left to call, and addressing by bare pid is
+/// exactly what these utilities are for.
+pub(crate) async fn hard_kill(pid: u32) {
     let result = if cfg!(windows) {
-        tokio::process::Command::new("taskkill").args(["/PID", &pid.to_string(), "/T", "/F"]).output().await
+        let mut cmd = tokio::process::Command::new("taskkill");
+        cmd.args(["/PID", &pid.to_string(), "/T", "/F"]);
+        // CREATE_NO_WINDOW — a GUI-subsystem parent would otherwise flash a
+        // console window for the utility.
+        #[cfg(windows)]
+        cmd.creation_flags(0x0800_0000);
+        cmd.output().await
     } else {
         tokio::process::Command::new("kill").args(["-TERM", &pid.to_string()]).output().await
     };

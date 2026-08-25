@@ -165,8 +165,17 @@ pub fn run() {
             }
 
             let manager = DaemonManager::new(handle.clone());
-            manager.load_and_spawn_all();
-            app.manage(manager);
+            app.manage(manager.clone());
+            // Reap stray daemon processes left by a previous shell instance
+            // BEFORE spawning our own (a stray keeps its uid's heartbeat
+            // alive and twin-conflicts every fresh spawn — see
+            // `daemon::reap`), then restore the persisted daemons. One
+            // sequenced task: the reap matches processes by command line,
+            // so it must finish before we spawn identical-looking children.
+            tauri::async_runtime::spawn(async move {
+                daemon::reap::reap_stray_daemons(manager.app_data_dir()).await;
+                manager.load_and_spawn_all();
+            });
 
             tray::build(&handle)?;
 

@@ -9,6 +9,7 @@ pub mod bundles;
 pub mod classify;
 pub mod manager;
 pub mod paths;
+pub mod reap;
 pub mod types;
 
 pub use manager::DaemonManager;

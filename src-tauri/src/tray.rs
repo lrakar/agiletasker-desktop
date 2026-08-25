@@ -114,18 +114,22 @@ async fn check_for_updates_interactive(app: &AppHandle) {
     match updater.check().await {
         Ok(Some(update)) => {
             let version = update.version.clone();
-            let confirmed = ask(
-                app,
-                "Update AgileTasker shell",
-                &format!("A new version of the AgileTasker shell ({version}) is available. Update now?"),
-            )
-            .await;
+            let running = app.try_state::<Arc<DaemonManager>>().map(|m| m.running_count()).unwrap_or(0);
+            let body = if running > 0 {
+                format!(
+                    "A new version of the AgileTasker shell ({version}) is available. \
+                     Updating will stop {running} running agent{} and start {} again afterwards. Update now?",
+                    if running == 1 { "" } else { "s" },
+                    if running == 1 { "it" } else { "them" },
+                )
+            } else {
+                format!("A new version of the AgileTasker shell ({version}) is available. Update now?")
+            };
+            let confirmed = ask(app, "Update AgileTasker shell", &body).await;
             if confirmed {
-                if let Err(e) = update.download_and_install(|_chunk, _total| {}, || {}).await {
+                if let Err(e) = install_update_stopping_agents(app, update).await {
                     log::error!("update download/install failed: {e}");
                     show_message(app, "Update failed", &format!("Could not install the update: {e}"), MessageDialogKind::Error);
-                } else {
-                    app.restart();
                 }
             }
         }
@@ -173,13 +177,45 @@ pub async fn check_for_updates_background(app: &AppHandle) {
                 return;
             }
             log::info!("shell update {version} available; installing silently (app idle)");
-            match update.download_and_install(|_chunk, _total| {}, || {}).await {
-                Ok(()) => app.restart(),
-                Err(e) => log::error!("silent update install failed (will retry next check): {e}"),
+            if let Err(e) = install_update_stopping_agents(app, update).await {
+                log::error!("silent update install failed (will retry next check): {e}");
             }
         }
         Ok(None) => {}
         Err(e) => log::warn!("background update check failed: {e}"),
+    }
+}
+
+/// The one sanctioned way to install a shell update: gracefully stop every
+/// daemon FIRST, then download/install, then restart the app.
+///
+/// The order is load-bearing on Windows: the NSIS installer must replace
+/// files a running daemon holds open (the `node.exe` sidecar lives in the
+/// install dir), so installing over live agents fails partway through — and
+/// however the install ends, the plugin's restart path only replaces the
+/// shell process, leaving the daemon children orphaned. An orphan keeps its
+/// uid's Firestore heartbeat, which twin-conflicts the relaunched shell's
+/// own daemon on every spawn — the host shows offline everywhere while a
+/// zombie "runs" (observed live, 2026-08-25; `daemon::reap` is the startup
+/// backstop for orphans that slip through anyway).
+///
+/// On a failed install the stopped daemons are respawned from their
+/// persisted configs (`shutdown_all` leaves `desired` untouched), and the
+/// error is returned for the caller to surface. On success the daemons stay
+/// down — the relaunched shell's startup restore brings them back.
+async fn install_update_stopping_agents(app: &AppHandle, update: tauri_plugin_updater::Update) -> Result<(), tauri_plugin_updater::Error> {
+    let manager = app.try_state::<Arc<DaemonManager>>().map(|m| m.inner().clone());
+    if let Some(m) = &manager {
+        m.shutdown_all().await;
+    }
+    match update.download_and_install(|_chunk, _total| {}, || {}).await {
+        Ok(()) => app.restart(),
+        Err(e) => {
+            if let Some(m) = &manager {
+                m.load_and_spawn_all();
+            }
+            Err(e)
+        }
     }
 }
 

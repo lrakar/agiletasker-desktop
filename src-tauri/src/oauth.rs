@@ -309,13 +309,23 @@ async fn accept_callback(listener: TcpListener, expected_state: &str) -> Result<
 // Entry point.
 // ---------------------------------------------------------------------------
 
+/// A compile-time credential counts as configured only if it's non-blank:
+/// CI expands a MISSING repo secret to an empty string (`env: X: ${{
+/// secrets.X }}` sets the var either way), which `option_env!` then reports
+/// as `Some("")` — without this filter that shipped as a sign-in flow that
+/// opened Google with `client_id=` and died on `invalid_request` instead of
+/// failing fast as NotConfigured.
+fn configured(value: Option<&'static str>) -> Option<&'static str> {
+    value.filter(|v| !v.trim().is_empty())
+}
+
 /// Runs the full loopback + PKCE flow: opens the system browser at Google's
 /// consent screen and returns once it has redirected back with a code
 /// that's been exchanged for tokens (or the flow times out / is cancelled /
 /// fails). See the module docs for the step-by-step.
 pub async fn google_sign_in(app: &AppHandle) -> Result<GoogleSignInResult, OAuthError> {
-    let client_id = option_env!("GOOGLE_OAUTH_CLIENT_ID").ok_or(OAuthError::NotConfigured)?;
-    let client_secret = option_env!("GOOGLE_OAUTH_CLIENT_SECRET").ok_or(OAuthError::NotConfigured)?;
+    let client_id = configured(option_env!("GOOGLE_OAUTH_CLIENT_ID")).ok_or(OAuthError::NotConfigured)?;
+    let client_secret = configured(option_env!("GOOGLE_OAUTH_CLIENT_SECRET")).ok_or(OAuthError::NotConfigured)?;
 
     let verifier = generate_code_verifier();
     let challenge = derive_pkce_challenge(&verifier);
@@ -335,6 +345,14 @@ pub async fn google_sign_in(app: &AppHandle) -> Result<GoogleSignInResult, OAuth
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn blank_compile_time_credentials_count_as_not_configured() {
+        assert_eq!(configured(None), None);
+        assert_eq!(configured(Some("")), None);
+        assert_eq!(configured(Some("   ")), None);
+        assert_eq!(configured(Some("abc123.apps.googleusercontent.com")), Some("abc123.apps.googleusercontent.com"));
+    }
 
     // RFC 7636 Appendix B known-answer test.
     #[test]
