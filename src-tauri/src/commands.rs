@@ -159,6 +159,23 @@ pub async fn check_for_shell_update(app: AppHandle) -> Result<ShellUpdateInfo, S
     }
 }
 
+/// The web UI's gift-banner Install (src/lib/desktop/shellUpdates.ts):
+/// re-checks the updater fresh (never trusts a handle from an earlier
+/// `check_for_shell_update` round-trip) and runs the one sanctioned install
+/// path — stop every agent gracefully, download + install, restart the app.
+/// On success the process restarts, so the webview usually never sees the
+/// `Ok`; a failure respawns the stopped agents Rust-side (see
+/// `tray::install_update_stopping_agents`) and rejects with the reason.
+#[tauri::command]
+pub async fn install_shell_update(app: AppHandle) -> Result<(), String> {
+    let updater = app.updater().map_err(|e| e.to_string())?;
+    match updater.check().await {
+        Ok(Some(update)) => crate::tray::install_update_stopping_agents(&app, update).await.map_err(|e| e.to_string()),
+        Ok(None) => Err("no shell update is available".to_string()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 /// System-browser Google sign-in (see `oauth` module docs for the full
 /// loopback + PKCE flow this wraps). Errors surface Rust's user-facing
 /// message text as-is (`OAuthError`'s `thiserror` `Display` impls, e.g.

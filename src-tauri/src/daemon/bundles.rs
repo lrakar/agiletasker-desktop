@@ -70,6 +70,18 @@ async fn download(url: &str) -> Result<Vec<u8>, reqwest::Error> {
     Ok(resp.bytes().await?.to_vec())
 }
 
+/// Serializes concurrent `ensure_daemon_deps` calls. Every daemon
+/// supervisor runs the sync on its own spawn path, and after an app update
+/// several supervisors hit a stale stamp SIMULTANEOUSLY — unserialized,
+/// one call's clean-destination `remove_dir_all` deletes another call's
+/// half-finished copy, and whichever call completes last stamps the
+/// wrecked result as done, permanently (the stamp now matches, so no
+/// later startup re-syncs). Observed live on the v0.1.3→v0.1.4 update
+/// (2026-08-30): three host daemons raced the sync, `node_modules` lost
+/// every entry sorting before "m" (werift's `debug` dep included), and
+/// all three crash-looped on import until the dir was manually repaired.
+static DEPS_SYNC_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 /// Copies the bundled native `node_modules` from the app's read-only
 /// resource dir into `app_data/daemons/node_modules` on first run, or
 /// whenever `app_version` differs from the last stamped copy (so a
@@ -81,6 +93,10 @@ pub async fn ensure_daemon_deps(
     stamp_file: &Path,
     app_version: &str,
 ) -> Result<(), BundleError> {
+    // Both the stamp check AND the wipe+copy+stamp must sit inside the
+    // critical section: a caller that merely waited out a peer's sync then
+    // re-checks the stamp and no-ops, instead of wiping the fresh copy.
+    let _sync_guard = DEPS_SYNC_LOCK.lock().await;
     let up_to_date = match tokio::fs::read_to_string(stamp_file).await {
         Ok(stamped) => stamped.trim() == app_version,
         Err(_) => false,
@@ -240,6 +256,47 @@ mod tests {
             tokio::fs::read_to_string(dest_dir.join("node-pty").join("index.js")).await.unwrap(),
             "changed"
         );
+
+        tokio::fs::remove_dir_all(&base).await.ok();
+    }
+
+    /// Regression test for the v0.1.4 concurrent-sync wreck (see
+    /// `DEPS_SYNC_LOCK`): N supervisors hitting a stale stamp at once must
+    /// come out of the sync with EVERY package present — before the lock,
+    /// one call's `remove_dir_all` deleted a peer's half-finished copy and
+    /// the surviving stamp froze the damage in permanently.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn ensure_daemon_deps_survives_concurrent_callers() {
+        let base = std::env::temp_dir().join(format!("agiletasker-deps-race-test-{}", std::process::id()));
+        tokio::fs::remove_dir_all(&base).await.ok();
+        let resource_dir = base.join("resource-node_modules");
+        let dest_dir = base.join("app-data-node_modules");
+        let stamp = base.join(".deps-version");
+        // Enough entries that a copy takes real time relative to a wipe.
+        for i in 0..40 {
+            let pkg = resource_dir.join(format!("pkg-{i:02}"));
+            tokio::fs::create_dir_all(&pkg).await.unwrap();
+            tokio::fs::write(pkg.join("index.js"), format!("module.exports = {i}")).await.unwrap();
+        }
+
+        let mut tasks = Vec::new();
+        for _ in 0..3 {
+            let (resource_dir, dest_dir, stamp) = (resource_dir.clone(), dest_dir.clone(), stamp.clone());
+            tasks.push(tokio::spawn(async move {
+                ensure_daemon_deps(&resource_dir, &dest_dir, &stamp, "0.9.9").await
+            }));
+        }
+        for task in tasks {
+            task.await.unwrap().unwrap();
+        }
+
+        for i in 0..40 {
+            assert!(
+                dest_dir.join(format!("pkg-{i:02}")).join("index.js").exists(),
+                "pkg-{i:02} missing after concurrent sync"
+            );
+        }
+        assert_eq!(tokio::fs::read_to_string(&stamp).await.unwrap(), "0.9.9");
 
         tokio::fs::remove_dir_all(&base).await.ok();
     }

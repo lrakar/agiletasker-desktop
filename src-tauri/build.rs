@@ -27,6 +27,7 @@ fn main() {
                 "daemon_log_tail",
                 "pick_directory",
                 "check_for_shell_update",
+                "install_shell_update",
                 "google_sign_in",
             ]),
         ),

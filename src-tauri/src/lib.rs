@@ -238,6 +238,7 @@ pub fn run() {
             commands::daemon_log_tail,
             commands::pick_directory,
             commands::check_for_shell_update,
+            commands::install_shell_update,
             commands::google_sign_in,
         ])
         .run(tauri::generate_context!())

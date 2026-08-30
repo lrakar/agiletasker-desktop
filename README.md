@@ -32,4 +32,4 @@ node scripts/prepare-deps.mjs   # fetches the Node sidecar runtime + daemon nati
 npx tauri build
 ```
 
-Synced from main repo commit `03dc977`.
+Synced from main repo commit `2f85ddd`.

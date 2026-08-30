@@ -21,6 +21,7 @@
     "allow-daemon-log-tail",
     "allow-pick-directory",
     "allow-check-for-shell-update",
+    "allow-install-shell-update",
     "allow-google-sign-in"
   ]
 }

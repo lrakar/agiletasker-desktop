@@ -187,7 +187,9 @@ pub async fn check_for_updates_background(app: &AppHandle) {
 }
 
 /// The one sanctioned way to install a shell update: gracefully stop every
-/// daemon FIRST, then download/install, then restart the app.
+/// daemon FIRST, then download/install, then restart the app. `pub(crate)`
+/// so `commands::install_shell_update` (the web UI's gift-banner Install)
+/// runs this exact same path as both tray flows above.
 ///
 /// The order is load-bearing on Windows: the NSIS installer must replace
 /// files a running daemon holds open (the `node.exe` sidecar lives in the
@@ -203,7 +205,7 @@ pub async fn check_for_updates_background(app: &AppHandle) {
 /// persisted configs (`shutdown_all` leaves `desired` untouched), and the
 /// error is returned for the caller to surface. On success the daemons stay
 /// down — the relaunched shell's startup restore brings them back.
-async fn install_update_stopping_agents(app: &AppHandle, update: tauri_plugin_updater::Update) -> Result<(), tauri_plugin_updater::Error> {
+pub(crate) async fn install_update_stopping_agents(app: &AppHandle, update: tauri_plugin_updater::Update) -> Result<(), tauri_plugin_updater::Error> {
     let manager = app.try_state::<Arc<DaemonManager>>().map(|m| m.inner().clone());
     if let Some(m) = &manager {
         m.shutdown_all().await;
